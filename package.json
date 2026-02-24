@@ -1,0 +1,17 @@
+{
+  "name": "navi-site",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 execute navi-db --local --file=./drizzle/schema.sql",
+    "db:migrate:prod": "wrangler d1 execute navi-db --remote --file=./drizzle/schema.sql"
+  },
+  "dependencies": {
+    "hono": "^4.0.0"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
