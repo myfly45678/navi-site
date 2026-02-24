@@ -1,124 +1,210 @@
-import { Hono } from 'hono';
-import { cors } from 'hono/cors';
+// 导入 API 模块
 import { login, verifyToken, logout } from '../api/auth.js';
 import * as navi from '../api/navi.js';
 
-const app = new Hono();
+// 简单的路由处理类
+class Router {
+  constructor() {
+    this.routes = { GET: {}, POST: {}, PUT: {}, DELETE: {} };
+  }
+
+  get(path, handler) { this.routes.GET[path] = handler; }
+  post(path, handler) { this.routes.POST[path] = handler; }
+  put(path, handler) { this.routes.PUT[path] = handler; }
+  delete(path, handler) { this.routes.DELETE[path] = handler; }
+
+  async handle(request, env) {
+    const url = new URL(request.url);
+    let path = url.pathname;
+    const method = request.method;
+
+    // 移除尾部斜杠
+    if (path !== '/' && path.endsWith('/')) path = path.slice(0, -1);
+
+    // 匹配路由
+    for (const [routePath, handler] of Object.entries(this.routes[method] || {})) {
+      if (routePath === path) {
+        return await handler(request, env, url);
+      }
+      // 处理动态路由
+      if (routePath.includes(':')) {
+        const pattern = routePath.replace(/:\w+/g, '([^/]+)');
+        const regex = new RegExp(`^${pattern}$`);
+        const match = path.match(regex);
+        if (match) {
+          const params = routePath.match(/:\w+/g)?.map((p, i) => ({
+            key: p.slice(1),
+            value: match[i + 1]
+          })) || [];
+          request.params = Object.fromEntries(params.map(p => [p.key, p.value]));
+          return await handler(request, env, url);
+        }
+      }
+    }
+
+    return null;
+  }
+}
+
+const router = new Router();
 
 // CORS 中间件
-app.use('/*', cors());
+function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  };
+}
 
 // 认证中间件
-const authMiddleware = async (c, next) => {
-  const token = c.req.header('Authorization')?.replace('Bearer ', '');
-  const isValid = await verifyToken(c.env.DB, token);
-  if (!isValid) {
-    return c.json({ error: '未授权' }, 401);
-  }
-  await next();
-};
+async function authMiddleware(request, env) {
+  const token = request.headers.get('Authorization')?.replace('Bearer ', '');
+  const isValid = await verifyToken(env.DB, token);
+  return isValid;
+}
 
-// 公开 API - 获取所有分类和导航
-app.get('/api/categories', async (c) => {
-  const categories = await navi.getCategories(c.env.DB);
-  return c.json({ success: true, data: categories });
+// JSON 响应
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+  });
+}
+
+// HTML 响应
+function htmlResponse(html, status = 200) {
+  return new Response(html, {
+    status,
+    headers: { 'Content-Type': 'text/html', ...corsHeaders() }
+  });
+}
+
+// ============ API 路由 ============
+
+// 公开 API - 获取所有分类
+router.get('/api/categories', async (request, env) => {
+  const categories = await navi.getCategories(env.DB);
+  return jsonResponse({ success: true, data: categories });
 });
 
-app.get('/api/navis', async (c) => {
-  const categoryId = c.req.query('category_id');
-  const navis = await navi.getNavis(c.env.DB, categoryId ? parseInt(categoryId) : null);
-  return c.json({ success: true, data: navis });
+// 公开 API - 获取所有导航
+router.get('/api/navis', async (request, env, url) => {
+  const categoryId = url.searchParams.get('category_id');
+  const navis = await navi.getNavis(env.DB, categoryId ? parseInt(categoryId) : null);
+  return jsonResponse({ success: true, data: navis });
 });
 
 // 管理 API - 登录
-app.post('/api/admin/login', async (c) => {
-  const { password } = await c.req.json();
-  const adminPassword = c.env.ADMIN_PASSWORD || 'admin123';
-  const result = await login(c.env.DB, password, adminPassword);
+router.post('/api/admin/login', async (request, env) => {
+  const { password } = await request.json();
+  const adminPassword = env.ADMIN_PASSWORD || 'admin123';
+  const result = await login(env.DB, password, adminPassword);
   if (result.success) {
-    return c.json({ success: true, token: result.token });
+    return jsonResponse({ success: true, token: result.token });
   }
-  return c.json({ success: false, error: result.error }, 401);
+  return jsonResponse({ success: false, error: result.error }, 401);
 });
-
-// 管理 API - 需要认证
-app.use('/api/admin/*', authMiddleware);
 
 // 管理 API - 登出
-app.post('/api/admin/logout', async (c) => {
-  const token = c.req.header('Authorization')?.replace('Bearer ', '');
-  await logout(c.env.DB, token);
-  return c.json({ success: true });
+router.post('/api/admin/logout', async (request, env) => {
+  const token = request.headers.get('Authorization')?.replace('Bearer ', '');
+  await logout(env.DB, token);
+  return jsonResponse({ success: true });
 });
 
-// 管理 API - 分类管理
-app.post('/api/admin/categories', async (c) => {
-  const { name, description, sort_order } = await c.req.json();
-  const id = await navi.createCategory(c.env.DB, name, description, sort_order || 0);
-  return c.json({ success: true, data: { id } });
+// 管理 API - 创建分类
+router.post('/api/admin/categories', async (request, env) => {
+  const isValid = await authMiddleware(request, env);
+  if (!isValid) return jsonResponse({ error: '未授权' }, 401);
+
+  const { name, description, sort_order } = await request.json();
+  const id = await navi.createCategory(env.DB, name, description, sort_order || 0);
+  return jsonResponse({ success: true, data: { id } });
 });
 
-app.put('/api/admin/categories/:id', async (c) => {
-  const id = parseInt(c.req.param('id'));
-  const { name, description, sort_order } = await c.req.json();
-  await navi.updateCategory(c.env.DB, id, name, description, sort_order || 0);
-  return c.json({ success: true });
+// 管理 API - 更新分类
+router.put('/api/admin/categories/:id', async (request, env) => {
+  const isValid = await authMiddleware(request, env);
+  if (!isValid) return jsonResponse({ error: '未授权' }, 401);
+
+  const id = parseInt(request.params.id);
+  const { name, description, sort_order } = await request.json();
+  await navi.updateCategory(env.DB, id, name, description, sort_order || 0);
+  return jsonResponse({ success: true });
 });
 
-app.delete('/api/admin/categories/:id', async (c) => {
-  const id = parseInt(c.req.param('id'));
-  await navi.deleteCategory(c.env.DB, id);
-  return c.json({ success: true });
+// 管理 API - 删除分类
+router.delete('/api/admin/categories/:id', async (request, env) => {
+  const isValid = await authMiddleware(request, env);
+  if (!isValid) return jsonResponse({ error: '未授权' }, 401);
+
+  const id = parseInt(request.params.id);
+  await navi.deleteCategory(env.DB, id);
+  return jsonResponse({ success: true });
 });
 
-// 管理 API - 导航管理
-app.post('/api/admin/navis', async (c) => {
-  const { category_id, title, description, url, icon, sort_order } = await c.req.json();
-  const id = await navi.createNavi(c.env.DB, category_id, title, description, url, icon || '', sort_order || 0);
-  return c.json({ success: true, data: { id } });
+// 管理 API - 创建导航
+router.post('/api/admin/navis', async (request, env) => {
+  const isValid = await authMiddleware(request, env);
+  if (!isValid) return jsonResponse({ error: '未授权' }, 401);
+
+  const { category_id, title, description, url, icon, sort_order } = await request.json();
+  const id = await navi.createNavi(env.DB, category_id, title, description, url, icon || '', sort_order || 0);
+  return jsonResponse({ success: true, data: { id } });
 });
 
-app.put('/api/admin/navis/:id', async (c) => {
-  const id = parseInt(c.req.param('id'));
-  const { category_id, title, description, url, icon, sort_order } = await c.req.json();
-  await navi.updateNavi(c.env.DB, id, category_id, title, description, url, icon || '', sort_order || 0);
-  return c.json({ success: true });
+// 管理 API - 更新导航
+router.put('/api/admin/navis/:id', async (request, env) => {
+  const isValid = await authMiddleware(request, env);
+  if (!isValid) return jsonResponse({ error: '未授权' }, 401);
+
+  const id = parseInt(request.params.id);
+  const { category_id, title, description, url, icon, sort_order } = await request.json();
+  await navi.updateNavi(env.DB, id, category_id, title, description, url, icon || '', sort_order || 0);
+  return jsonResponse({ success: true });
 });
 
-app.delete('/api/admin/navis/:id', async (c) => {
-  const id = parseInt(c.req.param('id'));
-  await navi.deleteNavi(c.env.DB, id);
-  return c.json({ success: true });
+// 管理 API - 删除导航
+router.delete('/api/admin/navis/:id', async (request, env) => {
+  const isValid = await authMiddleware(request, env);
+  if (!isValid) return jsonResponse({ error: '未授权' }, 401);
+
+  const id = parseInt(request.params.id);
+  await navi.deleteNavi(env.DB, id);
+  return jsonResponse({ success: true });
 });
 
-// 前端页面路由
-app.get('/', async (c) => {
-  return c.html(await getHomePage());
+// ============ 页面路由 ============
+
+// 首页
+router.get('/', async () => {
+  return htmlResponse(await getHomePage());
 });
 
-app.get('/admin', async (c) => {
-  return c.html(await getAdminPage());
+// 管理后台
+router.get('/admin', async () => {
+  return htmlResponse(await getAdminPage());
 });
 
+// 主请求处理
 export async function onRequest(context) {
   const { request, env } = context;
 
-  // 处理 API 请求
-  if (request.url.includes('/api/')) {
-    return app.fetch(request, env);
+  // 处理 OPTIONS 预检请求
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders() });
   }
 
-  // 处理页面请求
-  const url = new URL(request.url);
-  const path = url.pathname;
+  // 尝试匹配路由
+  const response = await router.handle(request, env);
+  if (response) return response;
 
-  if (path === '/' || path === '/admin') {
-    return app.fetch(request, env);
-  }
-
-  // 返回 404
-  return new Response('Not Found', { status: 404 });
+  // 404
+  return new Response('Not Found', { status: 404, headers: corsHeaders() });
 }
+
+// ============ HTML 生成函数 ============
 
 async function getHomePage() {
   return `<!DOCTYPE html>
@@ -166,7 +252,6 @@ async function getHomePage() {
       document.querySelectorAll('.engine-badge').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentEngine = btn.getAttribute('data-engine');
-      console.log('选择搜索引擎:', currentEngine);
     }
 
     async function loadData() {
@@ -243,8 +328,6 @@ async function getHomePage() {
         window.location.href = '/';
         return;
       }
-
-      console.log('搜索内容:', query, '搜索引擎:', currentEngine);
 
       if (currentEngine === '站内') {
         const lowerQuery = query.toLowerCase();
@@ -584,10 +667,7 @@ function getStyles() {
       box-shadow: 0 0 0 4px rgba(99,102,241,0.1);
     }
 
-    .search-box i {
-      color: #9ca3af;
-      font-size: 18px;
-    }
+    .search-box i { color: #9ca3af; font-size: 18px; }
 
     .search-box input {
       flex: 1;
@@ -598,9 +678,7 @@ function getStyles() {
       color: #333;
     }
 
-    .search-box input::placeholder {
-      color: #9ca3af;
-    }
+    .search-box input::placeholder { color: #9ca3af; }
 
     .search-box button {
       padding: 12px 24px;
@@ -630,11 +708,7 @@ function getStyles() {
       align-items: center;
     }
 
-    .engine-label {
-      color: #64748b;
-      font-size: 14px;
-      font-weight: 500;
-    }
+    .engine-label { color: #64748b; font-size: 14px; font-weight: 500; }
 
     .engine-badge {
       padding: 8px 18px;
@@ -663,30 +737,10 @@ function getStyles() {
       transform: translateY(-2px);
     }
 
-    .engine-baidu {
-      background: linear-gradient(135deg, #2932e1, #4e6ef2);
-      color: #fff;
-      border-color: #4e6ef2;
-    }
-
-    .engine-google {
-      background: linear-gradient(135deg, #4285f4, #34a853, #fbbc05, #ea4335);
-      color: #fff;
-      border-color: #4285f4;
-    }
-
-    .engine-bing {
-      background: linear-gradient(135deg, #00809d, #1260a8);
-      color: #fff;
-      border-color: #00809d;
-    }
-
-    .engine-baidu.active,
-    .engine-google.active,
-    .engine-bing.active {
-      opacity: 1;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-    }
+    .engine-baidu { background: linear-gradient(135deg, #2932e1, #4e6ef2); color: #fff; border-color: #4e6ef2; }
+    .engine-google { background: linear-gradient(135deg, #4285f4, #34a853, #fbbc05, #ea4335); color: #fff; border-color: #4285f4; }
+    .engine-bing { background: linear-gradient(135deg, #00809d, #1260a8); color: #fff; border-color: #00809d; }
+    .engine-baidu.active, .engine-google.active, .engine-bing.active { opacity: 1; box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
 
     header {
       display: flex;
@@ -712,10 +766,7 @@ function getStyles() {
       gap: 12px;
     }
 
-    header h1 i {
-      -webkit-text-fill-color: var(--primary);
-      font-size: 32px;
-    }
+    header h1 i { -webkit-text-fill-color: var(--primary); font-size: 32px; }
 
     .admin-link {
       color: #fff;
@@ -729,10 +780,6 @@ function getStyles() {
       display: flex;
       align-items: center;
       gap: 8px;
-    }
-
-    .admin-link i {
-      font-size: 14px;
     }
 
     .admin-link:hover {
@@ -764,19 +811,8 @@ function getStyles() {
       gap: 12px;
     }
 
-    .category h2 i {
-      color: var(--primary);
-      font-size: 24px;
-      width: 30px;
-      text-align: center;
-    }
-
-    .category-desc {
-      color: #888;
-      margin-bottom: 24px;
-      font-size: 14px;
-      padding-left: 14px;
-    }
+    .category h2 i { color: var(--primary); font-size: 24px; width: 30px; text-align: center; }
+    .category-desc { color: #888; margin-bottom: 24px; font-size: 14px; padding-left: 14px; }
 
     .navi-grid {
       display: grid;
@@ -801,10 +837,7 @@ function getStyles() {
     .navi-card::before {
       content: '';
       position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
+      top: 0; left: 0; right: 0; bottom: 0;
       background: linear-gradient(135deg, rgba(99,102,241,0.05), transparent);
       opacity: 0;
       transition: opacity 0.3s ease;
@@ -833,40 +866,12 @@ function getStyles() {
       color: var(--primary);
     }
 
-    .navi-icon i {
-      font-size: 22px;
-    }
-
     .navi-info { flex: 1; min-width: 0; }
+    .navi-info h3 { font-size: 16px; margin-bottom: 6px; color: #1a1a1a; font-weight: 600; }
+    .navi-info p { font-size: 13px; color: #888; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-    .navi-info h3 {
-      font-size: 16px;
-      margin-bottom: 6px;
-      color: #1a1a1a;
-      font-weight: 600;
-    }
-
-    .navi-info p {
-      font-size: 13px;
-      color: #888;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .loading, .empty {
-      text-align: center;
-      padding: 60px 20px;
-      color: #fff;
-      font-size: 18px;
-    }
-
-    .empty i {
-      display: block;
-      font-size: 48px;
-      margin-bottom: 12px;
-      opacity: 0.8;
-    }
+    .loading, .empty { text-align: center; padding: 60px 20px; color: #fff; font-size: 18px; }
+    .empty i { display: block; font-size: 48px; margin-bottom: 12px; opacity: 0.8; }
 
     .login-box {
       max-width: 420px;
@@ -889,40 +894,14 @@ function getStyles() {
       background-clip: text;
     }
 
-    .login-box h2 i {
-      margin-right: 12px;
-      -webkit-text-fill-color: var(--primary);
-    }
+    .login-box h2 i { margin-right: 12px; -webkit-text-fill-color: var(--primary); }
 
-    .input-wrapper {
-      position: relative;
-      margin-bottom: 20px;
-    }
+    .input-wrapper { position: relative; margin-bottom: 20px; }
+    .input-wrapper i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #9ca3af; font-size: 16px; }
 
-    .input-wrapper i {
-      position: absolute;
-      left: 16px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: #9ca3af;
-      font-size: 16px;
-    }
-
-    .input-wrapper input {
-      width: 100%;
-      padding: 16px 20px 16px 48px;
-      border: 2px solid #e5e7eb;
-      border-radius: 12px;
-      font-size: 16px;
-      transition: all 0.3s ease;
-      background: #f9fafb;
-      box-sizing: border-box;
-    }
-
-    .login-box input {
+    .input-wrapper input, .login-box input {
       width: 100%;
       padding: 16px 20px;
-      margin-bottom: 20px;
       border: 2px solid #e5e7eb;
       border-radius: 12px;
       font-size: 16px;
@@ -930,6 +909,8 @@ function getStyles() {
       background: #f9fafb;
       box-sizing: border-box;
     }
+
+    .input-wrapper input { padding-left: 48px; }
 
     .login-box input:focus {
       outline: none;
@@ -956,10 +937,6 @@ function getStyles() {
       gap: 10px;
     }
 
-    .login-box button i {
-      font-size: 14px;
-    }
-
     .login-box button:hover {
       transform: translateY(-2px);
       box-shadow: 0 12px 30px rgba(99,102,241,0.4);
@@ -974,10 +951,7 @@ function getStyles() {
       border-radius: 8px;
     }
 
-    .admin-header {
-      text-align: right;
-      margin-bottom: 24px;
-    }
+    .admin-header { text-align: right; margin-bottom: 24px; }
 
     .logout-btn {
       padding: 12px 24px;
@@ -993,10 +967,6 @@ function getStyles() {
       align-items: center;
       gap: 8px;
       margin-left: auto;
-    }
-
-    .logout-btn i {
-      font-size: 14px;
     }
 
     .logout-btn:hover {
@@ -1028,12 +998,7 @@ function getStyles() {
       gap: 12px;
     }
 
-    .admin-panel h2 i {
-      color: var(--primary);
-      font-size: 24px;
-      width: 30px;
-      text-align: center;
-    }
+    .admin-panel h2 i { color: var(--primary); font-size: 24px; width: 30px; text-align: center; }
 
     .form-row {
       display: flex;
@@ -1042,8 +1007,7 @@ function getStyles() {
       margin-bottom: 24px;
     }
 
-    .form-row input,
-    .form-row select {
+    .form-row input, .form-row select {
       padding: 12px 16px;
       border: 2px solid #e5e7eb;
       border-radius: 10px;
@@ -1054,8 +1018,7 @@ function getStyles() {
       min-width: 120px;
     }
 
-    .form-row input:focus,
-    .form-row select:focus {
+    .form-row input:focus, .form-row select:focus {
       outline: none;
       border-color: var(--primary);
       background: #fff;
@@ -1077,19 +1040,12 @@ function getStyles() {
       gap: 8px;
     }
 
-    .form-row button i {
-      font-size: 14px;
-    }
-
     .form-row button:hover {
       transform: translateY(-2px);
       box-shadow: 0 8px 25px rgba(16,185,129,0.4);
     }
 
-    .list {
-      max-height: 400px;
-      overflow-y: auto;
-    }
+    .list { max-height: 400px; overflow-y: auto; }
 
     .list-item {
       display: flex;
@@ -1101,14 +1057,8 @@ function getStyles() {
       border-radius: 8px;
     }
 
-    .list-item:hover {
-      background: rgba(99,102,241,0.05);
-      padding-left: 20px;
-    }
-
-    .list-item:last-child {
-      border-bottom: none;
-    }
+    .list-item:hover { background: rgba(99,102,241,0.05); padding-left: 20px; }
+    .list-item:last-child { border-bottom: none; }
 
     .list-item-content {
       display: flex;
@@ -1129,22 +1079,10 @@ function getStyles() {
       font-size: 18px;
     }
 
-    .list-item-content strong {
-      display: block;
-      color: #1a1a1a;
-      font-size: 15px;
-      margin-bottom: 4px;
-    }
+    .list-item-content strong { display: block; color: #1a1a1a; font-size: 15px; margin-bottom: 4px; }
+    .list-item-content small { color: #888; font-size: 13px; }
 
-    .list-item-content small {
-      color: #888;
-      font-size: 13px;
-    }
-
-    .list-actions {
-      display: flex;
-      gap: 8px;
-    }
+    .list-actions { display: flex; gap: 8px; }
 
     .list-item button {
       padding: 8px 16px;
@@ -1157,10 +1095,6 @@ function getStyles() {
       display: flex;
       align-items: center;
       gap: 6px;
-    }
-
-    .list-item button i {
-      font-size: 12px;
     }
 
     .list-item button:first-of-type {
@@ -1185,10 +1119,6 @@ function getStyles() {
       box-shadow: 0 4px 15px rgba(239,68,68,0.4);
     }
 
-    .list-actions button i {
-      font-size: 12px;
-    }
-
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
     ::-webkit-scrollbar-thumb { background: linear-gradient(135deg, var(--primary), var(--secondary)); border-radius: 4px; }
@@ -1200,27 +1130,10 @@ function getStyles() {
       .admin-content { grid-template-columns: 1fr; }
       header { flex-direction: column; gap: 16px; text-align: center; }
       .navi-grid { grid-template-columns: 1fr; }
-
-      .search-box {
-        flex-wrap: wrap;
-      }
-
-      .search-box input {
-        width: 100%;
-        order: 3;
-        padding-top: 12px;
-        border-top: 1px solid #e5e7eb;
-        margin-top: 8px;
-      }
-
-      .search-box button {
-        width: 100%;
-        justify-content: center;
-      }
-
-      .search-engines {
-        justify-content: center;
-      }
+      .search-box { flex-wrap: wrap; }
+      .search-box input { width: 100%; order: 3; padding-top: 12px; border-top: 1px solid #e5e7eb; margin-top: 8px; }
+      .search-box button { width: 100%; justify-content: center; }
+      .search-engines { justify-content: center; }
     }
   `;
 }
