@@ -285,12 +285,28 @@ async function getHomePage() {
       });
 
       const categoryIcons = {
-        '常用工具': 'fa-toolbox',
-        '设计资源': 'fa-palette',
-        '开发工具': 'fa-code',
-        '娱乐影音': 'fa-film',
-        '学习教育': 'fa-graduation-cap',
+        '常用工具': 'fa-star',
+        '设计资源': 'fa-paintbrush',
+        '开发工具': 'fa-terminal',
+        '娱乐影音': 'fa-clapperboard',
+        '学习教育': 'fa-book-open',
         '默认': 'fa-folder'
+      };
+
+      const brandColors = {
+        'fa-google': 'linear-gradient(135deg, #4285f4, #34a853, #fbbc05, #ea4335)',
+        'fa-bilibili': 'linear-gradient(135deg, #00a1d6, #fb7299)',
+        'fa-zhihu': 'linear-gradient(135deg, #0084ff, #0066cc)',
+        'fa-weibo': 'linear-gradient(135deg, #e6162d, #ff6b6b)',
+        'fa-baidu': 'linear-gradient(135deg, #2932e1, #4e6ef2)',
+        'fa-dribbble': 'linear-gradient(135deg, #ea4c89, #ff6b9d)',
+        'fa-behance': 'linear-gradient(135deg, #0057ff, #0072ff)',
+        'fa-pinterest': 'linear-gradient(135deg, #bd081c, #e60023)',
+        'fa-github': 'linear-gradient(135deg, #24292e, #444d56)',
+        'fa-stack-overflow': 'linear-gradient(135deg, #f48024, #fe7a15)',
+        'fa-youtube': 'linear-gradient(135deg, #ff0000, #cc0000)',
+        'fa-firefox-browser': 'linear-gradient(135deg, #ff7139, #ff9900)',
+        'fa-wikipedia-w': 'linear-gradient(135deg, #666, #999)'
       };
 
       const html = categories.map(cat => {
@@ -304,20 +320,34 @@ async function getHomePage() {
           <h2><i class="fas \${iconClass}"></i> \${cat.name}</h2>
           <p class="category-desc">\${cat.description || ''}</p>
           <div class="navi-grid">
-            \${categoryNavis.map(navi => \`
+            \${categoryNavis.map(navi => {
+              const iconHtml = navi.icon ? \`<span class="navi-icon" data-icon="\${navi.icon}"><i class="\${navi.icon}"></i></span>\` :
+                '<span class="navi-icon" data-icon="fa-link"><i class="fas fa-link"></i></span>';
+              return \`
               <a href="\${navi.url}" target="_blank" rel="noopener" class="navi-card">
-                \${navi.icon ? \`<span class="navi-icon"><i class="\${navi.icon}"></i></span>\` :
-                  '<span class="navi-icon"><i class="fas fa-link"></i></span>'}
+                \${iconHtml}
                 <div class="navi-info">
                   <h3>\${navi.title}</h3>
                   <p>\${navi.description || ''}</p>
                 </div>
               </a>
-            \`).join('')}
+              \`;
+            }).join('')}
           </div>
         </section>
       \`;
       }).filter(h => h.trim()).join('');
+
+      // 为品牌图标添加渐变色
+      setTimeout(() => {
+        document.querySelectorAll('.navi-icon[data-icon]').forEach(iconEl => {
+          const iconName = iconEl.getAttribute('data-icon');
+          if (brandColors[iconName]) {
+            iconEl.style.background = brandColors[iconName];
+            iconEl.style.color = '#fff';
+          }
+        });
+      }, 100);
 
       app.innerHTML = html || '<div class="empty"><i class="fas fa-search"></i> 未找到相关结果</div>';
     }
@@ -618,19 +648,20 @@ async function getAdminPage() {
 function getStyles() {
   return `
     :root {
-      --primary: #0071e3;
-      --primary-dark: #005bb5;
+      --primary: #0a84ff;
+      --primary-dark: #0063cc;
       --secondary: #5e5ce6;
-      --success: #34c759;
-      --danger: #ff3b30;
-      --text-primary: #1d1d1f;
-      --text-secondary: #6e6e73;
-      --text-tertiary: #86868b;
-      --bg-color: #f5f5f7;
-      --card-bg: #ffffff;
-      --card-border: rgba(0,0,0,0.08);
-      --card-shadow: 0 2px 8px rgba(0,0,0,0.04);
-      --card-shadow-hover: 0 8px 24px rgba(0,0,0,0.12);
+      --success: #30d158;
+      --danger: #ff453a;
+      --text-primary: #f5f5f7;
+      --text-secondary: #a1a1a6;
+      --text-tertiary: #6e6e73;
+      --bg-color: #000000;
+      --bg-secondary: #1c1c1e;
+      --card-bg: #1c1c1e;
+      --card-border: rgba(255,255,255,0.1);
+      --card-shadow: 0 2px 12px rgba(0,0,0,0.3);
+      --card-shadow-hover: 0 8px 32px rgba(0,0,0,0.5);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -665,7 +696,7 @@ function getStyles() {
       display: flex;
       align-items: center;
       gap: 12px;
-      background: var(--bg-color);
+      background: var(--bg-secondary);
       border: 1px solid var(--card-border);
       border-radius: 12px;
       padding: 8px 8px 8px 20px;
@@ -674,7 +705,7 @@ function getStyles() {
 
     .search-box:focus-within {
       border-color: var(--primary);
-      box-shadow: 0 0 0 4px rgba(0,113,227,0.15);
+      box-shadow: 0 0 0 4px rgba(10,132,255,0.25);
     }
 
     .search-box i { color: var(--text-tertiary); font-size: 18px; }
@@ -725,7 +756,7 @@ function getStyles() {
 
     .engine-badge {
       padding: 8px 16px;
-      background: var(--bg-color);
+      background: var(--bg-secondary);
       border: 1px solid var(--card-border);
       border-radius: 20px;
       font-size: 13px;
@@ -822,16 +853,16 @@ function getStyles() {
     }
 
     .category h2 i {
-      color: var(--primary);
+      color: #fff;
       font-size: 22px;
       width: 40px;
       height: 40px;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: var(--primary);
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
       border-radius: 10px;
-      color: #fff;
+      box-shadow: 0 4px 16px rgba(10,132,255,0.4);
     }
 
     .category-desc {
@@ -869,39 +900,62 @@ function getStyles() {
       align-items: center;
       padding: 24px 16px;
       background: var(--card-bg);
-      border-radius: 14px;
+      border-radius: 16px;
       text-decoration: none;
       color: inherit;
-      transition: all 0.2s ease;
+      transition: all 0.3s ease;
       border: 1px solid var(--card-border);
       position: relative;
-      min-height: 140px;
+      min-height: 150px;
+      overflow: hidden;
+    }
+
+    .navi-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--primary), var(--secondary), var(--success));
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .navi-card:hover::before {
+      opacity: 1;
     }
 
     .navi-card:hover {
       box-shadow: var(--card-shadow-hover);
-      transform: translateY(-4px);
-      border-color: rgba(0,113,227,0.3);
+      transform: translateY(-6px);
+      border-color: rgba(10,132,255,0.4);
     }
 
     .navi-icon {
-      font-size: 28px;
+      font-size: 32px;
       flex-shrink: 0;
-      width: 52px;
-      height: 52px;
+      width: 60px;
+      height: 60px;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: var(--bg-color);
-      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(10,132,255,0.15), rgba(94,92,230,0.15));
+      border-radius: 16px;
       color: var(--primary);
       margin-bottom: 14px;
-      transition: all 0.2s ease;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 16px rgba(10,132,255,0.2);
     }
 
     .navi-card:hover .navi-icon {
-      background: var(--primary);
       color: #fff;
+      box-shadow: 0 8px 24px rgba(10,132,255,0.4);
+      transform: scale(1.1);
+    }
+
+    .navi-card:hover .navi-icon:not([style*="background"]) {
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
     }
 
     .navi-info {
@@ -919,7 +973,7 @@ function getStyles() {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      transition: color 0.2s ease;
+      transition: color 0.3s ease;
     }
 
     .navi-card:hover .navi-info h3 {
@@ -992,7 +1046,7 @@ function getStyles() {
       border-radius: 12px;
       font-size: 16px;
       transition: all 0.2s ease;
-      background: var(--bg-color);
+      background: var(--bg-secondary);
       box-sizing: border-box;
       color: var(--text-primary);
     }
@@ -1001,7 +1055,7 @@ function getStyles() {
       outline: none;
       border-color: var(--primary);
       background: var(--card-bg);
-      box-shadow: 0 0 0 4px rgba(0,113,227,0.12);
+      box-shadow: 0 0 0 4px rgba(10,132,255,0.25);
     }
 
     .input-wrapper input:focus + i,
@@ -1034,9 +1088,10 @@ function getStyles() {
       color: var(--danger);
       margin-top: 16px;
       font-size: 14px;
-      background: rgba(255,59,48,0.1);
+      background: rgba(255,69,58,0.15);
       padding: 12px 16px;
       border-radius: 10px;
+      border: 1px solid rgba(255,69,58,0.3);
     }
 
     .admin-header {
@@ -1061,7 +1116,7 @@ function getStyles() {
     }
 
     .logout-btn:hover {
-      background: #d73a30;
+      background: #ff5f57;
     }
 
     .admin-content {
@@ -1097,8 +1152,9 @@ function getStyles() {
       display: flex;
       align-items: center;
       justify-content: center;
-      background: var(--primary);
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
       border-radius: 9px;
+      box-shadow: 0 4px 12px rgba(10,132,255,0.3);
     }
 
     .form-row {
@@ -1114,7 +1170,7 @@ function getStyles() {
       border-radius: 10px;
       font-size: 14px;
       transition: all 0.2s ease;
-      background: var(--bg-color);
+      background: var(--bg-secondary);
       flex: 1;
       min-width: 120px;
       color: var(--text-primary);
@@ -1124,7 +1180,7 @@ function getStyles() {
       outline: none;
       border-color: var(--primary);
       background: var(--card-bg);
-      box-shadow: 0 0 0 4px rgba(0,113,227,0.12);
+      box-shadow: 0 0 0 4px rgba(10,132,255,0.25);
     }
 
     .form-row button {
@@ -1143,7 +1199,7 @@ function getStyles() {
     }
 
     .form-row button:hover {
-      background: #2db34f;
+      background: #26a64b;
     }
 
     .list {
@@ -1161,7 +1217,7 @@ function getStyles() {
     }
 
     .list-item:hover {
-      background: var(--bg-color);
+      background: var(--bg-secondary);
       padding-left: 20px;
     }
 
@@ -1180,7 +1236,7 @@ function getStyles() {
       display: flex;
       align-items: center;
       justify-content: center;
-      background: var(--bg-color);
+      background: linear-gradient(135deg, rgba(10,132,255,0.2), rgba(94,92,230,0.2));
       border-radius: 10px;
       color: var(--primary);
       font-size: 18px;
@@ -1229,16 +1285,16 @@ function getStyles() {
     }
 
     .list-item button:last-of-type:hover {
-      background: #d73a30;
+      background: #ff5f57;
     }
 
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb {
-      background: #d1d1d1;
+      background: #3a3a3c;
       border-radius: 4px;
     }
-    ::-webkit-scrollbar-thumb:hover { background: #b8b8b8; }
+    ::-webkit-scrollbar-thumb:hover { background: #48484a; }
 
     @media (max-width: 768px) {
       .container { padding: 20px 16px; }
